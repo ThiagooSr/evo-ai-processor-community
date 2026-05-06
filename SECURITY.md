@@ -1,41 +1,68 @@
 # Security Policy
 
+Evolution Foundation takes the security of Evo CRM Agent Processor seriously. We
+appreciate your efforts to responsibly disclose any vulnerabilities you find.
+
 ## Reporting a Vulnerability
 
-If you believe you have found a security vulnerability in this repository, please report it privately so we can address it before public disclosure.
+**Please do NOT open a public GitHub issue for security vulnerabilities.**
 
-**Preferred channel:** [GitHub Private Vulnerability Reporting](https://github.com/EvolutionAPI/evo-ai-processor-community/security/advisories/new)
+Instead, report them privately through one of the following channels:
 
-**Email fallback:** `security@evolution-api.com`
+### Preferred channels
 
-Please include:
+1. **GitHub Private Vulnerability Reporting** — use the "Security" tab on this
+   repository to submit a private advisory.
 
-- A description of the issue and its potential impact
-- Steps to reproduce (proof of concept if possible)
-- Affected versions, commits, or files
-- Your assessment of severity
+2. **Email** — send your report to **suporte@evofoundation.com.br** with the
+   subject line `[SECURITY] Evo CRM Agent Processor — <brief description>`.
 
-We aim to acknowledge new reports within **2 business days** and to provide an initial remediation plan within **7 business days** for high or critical severity issues.
+### What to include
 
-## Scope
+To help us triage and resolve the issue quickly, please include:
 
-In scope:
+- A clear description of the vulnerability
+- Steps to reproduce (proof of concept, if available)
+- Affected versions
+- Potential impact and severity assessment
+- Any suggested mitigation or fix
+- Your name and contact information (for credit, if desired)
 
-- This repository (`evo-ai-processor-community`) and its published artifacts
-- Credentials or secrets committed to the repository or its history
-- Authentication, authorization, and data-handling defects
+## Response Timeline
 
-Out of scope:
+| Stage | Target |
+|---|---|
+| Initial acknowledgment | Within 48 hours |
+| Triage and validation | Within 5 business days |
+| Fix development | Depends on severity (1–30 days) |
+| Public disclosure | Coordinated with reporter after fix is released |
 
-- Third-party services integrated via documented APIs (report to the respective vendor)
-- Issues that require physical access or social engineering of our team
+## Disclosure Policy
 
-## Safe Harbor
+We follow a coordinated disclosure model:
 
-We will not pursue legal action against researchers who:
+1. You report the vulnerability privately
+2. We acknowledge receipt and begin triage
+3. We work with you to understand and validate the issue
+4. We develop, test, and release a fix
+5. We publicly disclose the vulnerability and credit you (unless you prefer
+   to remain anonymous)
 
-- Make a good-faith effort to avoid privacy violations, data destruction, or service disruption
-- Report the issue privately using the channels above before any public disclosure
-- Give us a reasonable window to remediate before disclosure
+## Supported Versions
 
-Thank you for helping keep Evolution API and its users safe.
+Security updates are provided for the latest released version. Older versions
+may receive critical security fixes at our discretion.
+
+## Recognition
+
+We value the security research community. Researchers who responsibly disclose
+vulnerabilities will be:
+
+- Credited in the security advisory (with permission)
+- Listed in our acknowledgments page (when available)
+- Eligible for public recognition via Evolution Foundation channels
+
+---
+
+For general inquiries (non-security): **suporte@evofoundation.com.br**
+For more information: [evolutionfoundation.com.br](https://evolutionfoundation.com.br)
