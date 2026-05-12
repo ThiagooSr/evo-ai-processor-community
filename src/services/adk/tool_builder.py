@@ -272,12 +272,21 @@ class ToolBuilder:
             self.tools.append(self._create_exit_loop_tool())
 
         # Process CRM tools if enabled
-        # Enable CRM tools if transfer_to_human, allow_reminders, allow_contact_edit, or allow_pipeline_manipulation is enabled
+        # Enable CRM tools if transfer_to_human, allow_reminders, allow_contact_edit, allow_pipeline_manipulation
+        # or allow_manage_labels is enabled
         transfer_to_human_enabled = agent_config.get("transfer_to_human_enabled", False) or agent_config.get("transfer_to_human", False)
         allow_reminders = agent_config.get("allow_reminders", False)
         allow_contact_edit = agent_config.get("allow_contact_edit", False)
         allow_pipeline_manipulation = agent_config.get("allow_pipeline_manipulation", False)
-        enable_crm_tools = agent_config.get("enable_crm_tools", False) or transfer_to_human_enabled or allow_reminders or allow_contact_edit or allow_pipeline_manipulation
+        allow_manage_labels = agent_config.get("allow_manage_labels", False)
+        enable_crm_tools = (
+            agent_config.get("enable_crm_tools", False)
+            or transfer_to_human_enabled
+            or allow_reminders
+            or allow_contact_edit
+            or allow_pipeline_manipulation
+            or allow_manage_labels
+        )
 
         if enable_crm_tools:
             from src.services.adk.tools.evo_crm import (
@@ -285,6 +294,7 @@ class ToolBuilder:
                 create_send_private_message_tool,
                 create_update_contact_tool,
                 create_pipeline_manipulation_tool,
+                create_manage_conversation_labels_tool,
             )
 
             try:
@@ -328,6 +338,14 @@ class ToolBuilder:
                     logger.info(
                         f"Added pipeline_manipulation tool from CRM tools"
                         + (f" with {len(pipeline_rules)} pipeline rules" if pipeline_rules else "")
+                    )
+
+                # Add manage_conversation_labels tool if enabled
+                if allow_manage_labels:
+                    labels_tool = create_manage_conversation_labels_tool()
+                    self.tools.append(labels_tool)
+                    logger.info(
+                        f"Added manage_conversation_labels tool from CRM tools"
                     )
 
             except Exception as e:

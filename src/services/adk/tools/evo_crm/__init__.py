@@ -10,11 +10,13 @@ from .transfer_to_human import create_transfer_to_human_tool
 from .send_private_message import create_send_private_message_tool
 from .update_contact import create_update_contact_tool
 from .pipeline_manipulation import create_pipeline_manipulation_tool
+from .manage_conversation_labels import create_manage_conversation_labels_tool
 
 __all__ = [
     "create_transfer_to_human_tool",
     "create_send_private_message_tool",
     "create_update_contact_tool",
     "create_pipeline_manipulation_tool",
+    "create_manage_conversation_labels_tool",
 ]
 
