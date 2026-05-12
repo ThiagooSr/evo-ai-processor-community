@@ -685,6 +685,8 @@ class LlmAgentBuilder:
         transfer_to_human_enabled = agent.config.get("transfer_to_human_enabled", False) or agent.config.get("transfer_to_human", False)
         allow_reminders = agent.config.get("allow_reminders", False)
         allow_contact_edit = agent.config.get("allow_contact_edit", False)
+        allow_pipeline_manipulation = agent.config.get("allow_pipeline_manipulation", False)
+        allow_manage_labels = agent.config.get("allow_manage_labels", False)
         
         if transfer_to_human_enabled:
             transfer_rules = agent.config.get("transfer_rules", [])
@@ -722,17 +724,52 @@ class LlmAgentBuilder:
             contact_edit_config = agent.config.get("contact_edit_config", {})
             editable_fields = contact_edit_config.get("editableFields", [])
             edit_instructions = contact_edit_config.get("instructions", "")
-            
+
             fields_text = ", ".join(editable_fields) if editable_fields else "various fields"
             instructions_text = f" {edit_instructions}" if edit_instructions else ""
-            
+
             crm_tools_instructions.append(
                 f"Update Contact Tool: Available. Use this tool to update contact information when the user requests changes to their data. "
                 f"You can edit the following fields: {fields_text}.{instructions_text} "
                 f"The contact_id will be automatically extracted from the conversation context, so you don't need to provide it explicitly. "
                 f"Simply call the tool with the fields you want to update (e.g., name, email, phone_number, etc.)."
             )
-        
+
+        if allow_pipeline_manipulation:
+            pipeline_rules = agent.config.get("pipeline_rules", [])
+            if isinstance(pipeline_rules, list) and pipeline_rules:
+                rules_text = []
+                for rule in pipeline_rules:
+                    pipeline_name = rule.get("pipelineName") or rule.get("pipeline_name") or rule.get("pipelineId") or rule.get("pipeline_id") or "unknown pipeline"
+                    stage_name = rule.get("stageName") or rule.get("stage_name") or rule.get("stageId") or rule.get("stage_id")
+                    instructions = rule.get("instructions") or rule.get("description") or ""
+                    descriptor = f"{pipeline_name}"
+                    if stage_name:
+                        descriptor += f" → {stage_name}"
+                    if instructions:
+                        descriptor += f": {instructions}"
+                    rules_text.append(f"- {descriptor}")
+
+                crm_tools_instructions.append(
+                    "Pipeline Manipulation Tool: Available. Use this tool to assign the current conversation to a pipeline or move it between stages. "
+                    "The conversation_id will be automatically extracted from the context. "
+                    f"Configured pipeline rules:\n{chr(10).join(rules_text)}\n"
+                    "Apply a rule only when its instructions clearly match the current situation. Do not move conversations between stages without a matching rule."
+                )
+            else:
+                crm_tools_instructions.append(
+                    "Pipeline Manipulation Tool: Available. Use this tool to assign the current conversation to a pipeline or move it between stages when the conversation reaches a state that warrants it (e.g., qualified lead, sale closed, follow-up needed). "
+                    "The conversation_id is auto-extracted from the context; you must provide the target pipeline_id and stage_id (or the stage you want to move to)."
+                )
+
+        if allow_manage_labels:
+            crm_tools_instructions.append(
+                "Manage Conversation Labels Tool: Available. Use this tool to tag the current conversation with short, lower-case labels (e.g. \"vip\", \"awaiting-payment\", \"followup\") so it can be filtered and routed in the CRM. "
+                "Actions: action=\"list\" returns the current labels; action=\"add\" appends one or more labels preserving the existing ones; action=\"remove\" removes specific labels. "
+                "Always prefer calling action=\"list\" first when you are unsure which labels are already attached, then decide whether to add or remove. "
+                "Only manage labels when the user's request, the conversation state or your routing rules clearly justify it — do not invent random tags."
+            )
+
         # Check if Google Calendar integration is enabled
         integrations = agent.config.get("integrations", {})
         google_calendar_config = integrations.get("google-calendar") or integrations.get("google_calendar")
