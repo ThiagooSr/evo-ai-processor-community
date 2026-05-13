@@ -447,10 +447,26 @@ class LlmAgentBuilder:
         self, agent: Agent, processed_agents: set = None, enabled_tools: List[str] = []
     ) -> Tuple[LlmAgent, Optional[List[str]]]:
         """Create an LLM agent from the agent data."""
+        # Merge integrations from the dedicated `agent_integrations` table into
+        # the in-memory agent.config so native tools (ElevenLabs, Knowledge Nexus,
+        # Google Calendar, Google Sheets) gated by `integrations[*].connected`
+        # also pick up config rows persisted via POST /agents/:id/integrations.
+        # Existing entries in agent.config["integrations"] take precedence.
+        merged_config = dict(agent.config) if agent.config else {}
+        existing_integrations = dict(merged_config.get("integrations") or {})
+        for item in getattr(agent, "_integrations", []) or []:
+            provider = (item.get("provider") or "").replace("_", "-")
+            if not provider:
+                continue
+            row_config = dict(item.get("config") or {})
+            row_config.setdefault("connected", True)
+            existing_integrations.setdefault(provider, row_config)
+        merged_config["integrations"] = existing_integrations
+
         # Get custom tools from the configuration
         custom_tools = []
         custom_tools = self.tool_builder.build_tools(
-            agent.config, self.db, str(agent.id)
+            merged_config, self.db, str(agent.id)
         )
 
         # Get MCP tools from the configuration
