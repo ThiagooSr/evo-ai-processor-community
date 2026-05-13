@@ -279,6 +279,7 @@ class ToolBuilder:
         allow_contact_edit = agent_config.get("allow_contact_edit", False)
         allow_pipeline_manipulation = agent_config.get("allow_pipeline_manipulation", False)
         allow_manage_labels = agent_config.get("allow_manage_labels", False)
+        allow_product_sales = agent_config.get("allow_product_sales", False)
         enable_crm_tools = (
             agent_config.get("enable_crm_tools", False)
             or transfer_to_human_enabled
@@ -286,6 +287,7 @@ class ToolBuilder:
             or allow_contact_edit
             or allow_pipeline_manipulation
             or allow_manage_labels
+            or allow_product_sales
         )
 
         if enable_crm_tools:
@@ -295,6 +297,7 @@ class ToolBuilder:
                 create_update_contact_tool,
                 create_pipeline_manipulation_tool,
                 create_manage_conversation_labels_tool,
+                create_link_product_to_pipeline_item_tool,
             )
 
             try:
@@ -346,6 +349,14 @@ class ToolBuilder:
                     self.tools.append(labels_tool)
                     logger.info(
                         f"Added manage_conversation_labels tool from CRM tools"
+                    )
+
+                # Add link_product_to_pipeline_item tool if enabled
+                if allow_product_sales:
+                    product_link_tool = create_link_product_to_pipeline_item_tool()
+                    self.tools.append(product_link_tool)
+                    logger.info(
+                        f"Added link_product_to_pipeline_item tool from CRM tools"
                     )
 
             except Exception as e:

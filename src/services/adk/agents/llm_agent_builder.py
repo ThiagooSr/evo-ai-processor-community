@@ -687,7 +687,8 @@ class LlmAgentBuilder:
         allow_contact_edit = agent.config.get("allow_contact_edit", False)
         allow_pipeline_manipulation = agent.config.get("allow_pipeline_manipulation", False)
         allow_manage_labels = agent.config.get("allow_manage_labels", False)
-        
+        allow_product_sales = agent.config.get("allow_product_sales", False)
+
         if transfer_to_human_enabled:
             transfer_rules = agent.config.get("transfer_rules", [])
             if transfer_rules:
@@ -768,6 +769,78 @@ class LlmAgentBuilder:
                 "Actions: action=\"list\" returns the current labels; action=\"add\" appends one or more labels preserving the existing ones; action=\"remove\" removes specific labels. "
                 "Always prefer calling action=\"list\" first when you are unsure which labels are already attached, then decide whether to add or remove. "
                 "Only manage labels when the user's request, the conversation state or your routing rules clearly justify it — do not invent random tags."
+            )
+
+        if allow_product_sales:
+            crm_tools_instructions.append(
+                "Link Product to Pipeline Item Tool: Available. Use this tool to record a sale on the current pipeline card when the user has confirmed they want to purchase one of the products listed in the <product-catalog> block. "
+                "Required: product_id (the UUID from the catalog) and quantity (positive integer). Optional: product_variant_id (size/color) and notes. "
+                "The pipeline_item_id is auto-extracted from context. The CRM snapshots the unit price at the moment of the call, so calling this prematurely (before purchase intent is confirmed) commits the sale incorrectly. "
+                "Do NOT call this tool just because the user asked about a product — only call it when the purchase intent is explicit."
+            )
+
+        # Build a <product-catalog> block from the products attached to this agent.
+        # The CRM populates `assigned_products` in agent.config via the
+        # Ai::AgentProductSyncService whenever the user attaches/detaches a
+        # product on the "Products" tab of the agent editor. We cap the list
+        # at MAX_PRODUCTS_PER_PROMPT so we don't blow up the context window
+        # on large catalogs (RAG / search tool is the path forward there).
+        assigned_products = agent.config.get("assigned_products") or []
+        max_products = int(os.getenv("MAX_PRODUCTS_PER_PROMPT", "50"))
+        if isinstance(assigned_products, list) and assigned_products:
+            truncated = False
+            if len(assigned_products) > max_products:
+                logger.warning(
+                    f"product catalog truncated: {len(assigned_products)} -> {max_products}"
+                )
+                assigned_products = assigned_products[:max_products]
+                truncated = True
+
+            lines = []
+            for product in assigned_products:
+                if not isinstance(product, dict):
+                    continue
+                kind = product.get("kind") or "physical"
+                name = product.get("name") or product.get("id") or "unknown"
+                price = product.get("default_price")
+                currency = product.get("currency") or "BRL"
+                url = product.get("purchase_url") or ""
+                description = (product.get("description") or "").strip()
+                if len(description) > 200:
+                    description = description[:200].rstrip() + "..."
+
+                price_str = ""
+                if price is not None:
+                    try:
+                        price_str = f"{currency} {float(price):.2f}"
+                    except (TypeError, ValueError):
+                        price_str = f"{currency} {price}"
+
+                pieces = [f"[{kind}] {name}"]
+                if price_str:
+                    pieces.append(price_str)
+                if url:
+                    pieces.append(url)
+                if description:
+                    pieces.append(description)
+                lines.append("- " + " — ".join(pieces))
+
+            header = (
+                "You can recommend the following catalog products during this conversation. "
+                "Always cite the exact name and purchase link as listed below. "
+                "Do not invent products that are not in this list."
+            )
+            footer = (
+                "\n(Catalog truncated to the first {max} entries.)".format(max=max_products)
+                if truncated else ""
+            )
+            agent_config_sections.append(
+                "<product-catalog>\n"
+                + header
+                + "\n\n"
+                + "\n".join(lines)
+                + footer
+                + "\n</product-catalog>"
             )
 
         # Check if Google Calendar integration is enabled
