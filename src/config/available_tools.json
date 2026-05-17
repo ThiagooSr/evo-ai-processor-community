@@ -159,6 +159,61 @@
                 "default_values": {},
                 "field_types": {}
             }
+        },
+        {
+            "id": "knowledge_nexus_search",
+            "name": "knowledge_nexus_search",
+            "description": "Search the EvoNexus knowledge base (hybrid vector + BM25 retrieval) for chunks relevant to a user query. Use this before answering when factual grounding from indexed company knowledge is needed.",
+            "tags": [
+                "knowledge",
+                "rag",
+                "retrieval",
+                "nexus",
+                "search"
+            ],
+            "examples": [
+                "Look up the company's refund policy before answering a billing question",
+                "Retrieve product specs from the curated knowledge space",
+                "Ground a support reply with indexed FAQ entries"
+            ],
+            "inputModes": [
+                "text/plain"
+            ],
+            "outputModes": [
+                "application/json"
+            ],
+            "config": {
+                "required_fields": [
+                    "nexus_base_url",
+                    "nexus_api_key",
+                    "space_id"
+                ],
+                "optional_fields": [
+                    "default_top_k",
+                    "default_filters",
+                    "timeout_seconds"
+                ],
+                "default_values": {
+                    "default_top_k": 10,
+                    "default_filters": {},
+                    "timeout_seconds": 15.0
+                },
+                "field_types": {
+                    "nexus_base_url": "string",
+                    "nexus_api_key": {
+                        "type": "string",
+                        "secret": true,
+                        "description": "EvoNexus API key in the format evo_k_<prefix>.<secret>"
+                    },
+                    "space_id": {
+                        "type": "string",
+                        "description": "UUID of the target Nexus knowledge space"
+                    },
+                    "default_top_k": "integer",
+                    "default_filters": "object",
+                    "timeout_seconds": "float"
+                }
+            }
         }
     ],
     "categories": [
@@ -178,12 +233,20 @@
             "tools": [
                 "web_scraper"
             ]
+        },
+        {
+            "id": "knowledge",
+            "name": "Knowledge Tools",
+            "description": "Retrieval-augmented generation tools backed by curated knowledge bases",
+            "tools": [
+                "knowledge_nexus_search"
+            ]
         }
     ],
     "metadata": {
-        "version": "1.1.0",
-        "last_updated": "2025-01-27",
-        "total_tools": 3,
-        "total_categories": 2
+        "version": "1.2.0",
+        "last_updated": "2026-05-13",
+        "total_tools": 4,
+        "total_categories": 3
     }
 }

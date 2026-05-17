@@ -40,20 +40,28 @@ logger = setup_logger(__name__)
 
 def get_async_db_url(db_url: str) -> str:
     """Convert PostgreSQL connection string to async format (postgresql+asyncpg://).
-    
+
+    asyncpg does not accept the libpq-style ``sslmode`` query parameter — it
+    uses ``ssl`` instead. We rewrite the URL so a single DSN with
+    ``sslmode=require`` (used by psycopg2 and the rest of the stack) still
+    works when the async driver picks it up.
+
     Args:
         db_url: PostgreSQL connection string (postgresql://...)
-        
+
     Returns:
-        Async PostgreSQL connection string (postgresql+asyncpg://...)
+        Async PostgreSQL connection string (postgresql+asyncpg://...) with
+        any ``sslmode=`` rewritten to ``ssl=``.
     """
     if db_url.startswith("postgresql://"):
-        return db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        result = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     elif db_url.startswith("postgresql+asyncpg://"):
-        return db_url
+        result = db_url
     else:
-        # If already in async format or other format, return as is
         return db_url
+
+    # asyncpg rejects `sslmode=`; translate it to `ssl=` keeping the value.
+    return result.replace("?sslmode=", "?ssl=").replace("&sslmode=", "&ssl=")
 
 
 # Initialize session service based on AI engine

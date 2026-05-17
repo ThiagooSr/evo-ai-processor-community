@@ -130,3 +130,9 @@ celerybeat-schedule
 Thumbs.db
 
 uv.lock
+
+# Workspace planning artifacts (not part of the application)
+_evo/
+_evo-output/
+_bmad/
+_bmad-output/

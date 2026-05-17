@@ -446,10 +446,26 @@ class LlmAgentBuilder:
         self, agent: Agent, processed_agents: set = None, enabled_tools: List[str] = []
     ) -> Tuple[LlmAgent, Optional[List[str]]]:
         """Create an LLM agent from the agent data."""
+        # Merge integrations from the dedicated `agent_integrations` table into
+        # the in-memory agent.config so native tools (ElevenLabs, Knowledge Nexus,
+        # Google Calendar, Google Sheets) gated by `integrations[*].connected`
+        # also pick up config rows persisted via POST /agents/:id/integrations.
+        # Existing entries in agent.config["integrations"] take precedence.
+        merged_config = dict(agent.config) if agent.config else {}
+        existing_integrations = dict(merged_config.get("integrations") or {})
+        for item in getattr(agent, "_integrations", []) or []:
+            provider = (item.get("provider") or "").replace("_", "-")
+            if not provider:
+                continue
+            row_config = dict(item.get("config") or {})
+            row_config.setdefault("connected", True)
+            existing_integrations.setdefault(provider, row_config)
+        merged_config["integrations"] = existing_integrations
+
         # Get custom tools from the configuration
         custom_tools = []
         custom_tools = self.tool_builder.build_tools(
-            agent.config, self.db, str(agent.id)
+            merged_config, self.db, str(agent.id)
         )
 
         # Get MCP tools from the configuration
@@ -684,7 +700,10 @@ class LlmAgentBuilder:
         transfer_to_human_enabled = agent.config.get("transfer_to_human_enabled", False) or agent.config.get("transfer_to_human", False)
         allow_reminders = agent.config.get("allow_reminders", False)
         allow_contact_edit = agent.config.get("allow_contact_edit", False)
-        
+        allow_pipeline_manipulation = agent.config.get("allow_pipeline_manipulation", False)
+        allow_manage_labels = agent.config.get("allow_manage_labels", False)
+        allow_product_sales = agent.config.get("allow_product_sales", False)
+
         if transfer_to_human_enabled:
             transfer_rules = agent.config.get("transfer_rules", [])
             if transfer_rules:
@@ -721,17 +740,124 @@ class LlmAgentBuilder:
             contact_edit_config = agent.config.get("contact_edit_config", {})
             editable_fields = contact_edit_config.get("editableFields", [])
             edit_instructions = contact_edit_config.get("instructions", "")
-            
+
             fields_text = ", ".join(editable_fields) if editable_fields else "various fields"
             instructions_text = f" {edit_instructions}" if edit_instructions else ""
-            
+
             crm_tools_instructions.append(
                 f"Update Contact Tool: Available. Use this tool to update contact information when the user requests changes to their data. "
                 f"You can edit the following fields: {fields_text}.{instructions_text} "
                 f"The contact_id will be automatically extracted from the conversation context, so you don't need to provide it explicitly. "
                 f"Simply call the tool with the fields you want to update (e.g., name, email, phone_number, etc.)."
             )
-        
+
+        if allow_pipeline_manipulation:
+            pipeline_rules = agent.config.get("pipeline_rules", [])
+            if isinstance(pipeline_rules, list) and pipeline_rules:
+                rules_text = []
+                for rule in pipeline_rules:
+                    pipeline_name = rule.get("pipelineName") or rule.get("pipeline_name") or rule.get("pipelineId") or rule.get("pipeline_id") or "unknown pipeline"
+                    stage_name = rule.get("stageName") or rule.get("stage_name") or rule.get("stageId") or rule.get("stage_id")
+                    instructions = rule.get("instructions") or rule.get("description") or ""
+                    descriptor = f"{pipeline_name}"
+                    if stage_name:
+                        descriptor += f" → {stage_name}"
+                    if instructions:
+                        descriptor += f": {instructions}"
+                    rules_text.append(f"- {descriptor}")
+
+                crm_tools_instructions.append(
+                    "Pipeline Manipulation Tool: Available. Use this tool to assign the current conversation to a pipeline or move it between stages. "
+                    "The conversation_id will be automatically extracted from the context. "
+                    f"Configured pipeline rules:\n{chr(10).join(rules_text)}\n"
+                    "Apply a rule only when its instructions clearly match the current situation. Do not move conversations between stages without a matching rule."
+                )
+            else:
+                crm_tools_instructions.append(
+                    "Pipeline Manipulation Tool: Available. Use this tool to assign the current conversation to a pipeline or move it between stages when the conversation reaches a state that warrants it (e.g., qualified lead, sale closed, follow-up needed). "
+                    "The conversation_id is auto-extracted from the context; you must provide the target pipeline_id and stage_id (or the stage you want to move to)."
+                )
+
+        if allow_manage_labels:
+            crm_tools_instructions.append(
+                "Manage Conversation Labels Tool: Available. Use this tool to tag the current conversation with short, lower-case labels (e.g. \"vip\", \"awaiting-payment\", \"followup\") so it can be filtered and routed in the CRM. "
+                "Actions: action=\"list\" returns the current labels; action=\"add\" appends one or more labels preserving the existing ones; action=\"remove\" removes specific labels. "
+                "Always prefer calling action=\"list\" first when you are unsure which labels are already attached, then decide whether to add or remove. "
+                "Only manage labels when the user's request, the conversation state or your routing rules clearly justify it — do not invent random tags."
+            )
+
+        if allow_product_sales:
+            crm_tools_instructions.append(
+                "Link Product to Pipeline Item Tool: Available. Use this tool to record a sale on the current pipeline card when the user has confirmed they want to purchase one of the products listed in the <product-catalog> block. "
+                "Required: product_id (the UUID from the catalog) and quantity (positive integer). Optional: product_variant_id (size/color) and notes. "
+                "The pipeline_item_id is auto-extracted from context. The CRM snapshots the unit price at the moment of the call, so calling this prematurely (before purchase intent is confirmed) commits the sale incorrectly. "
+                "Do NOT call this tool just because the user asked about a product — only call it when the purchase intent is explicit."
+            )
+
+        # Build a <product-catalog> block from the products attached to this agent.
+        # The CRM populates `assigned_products` in agent.config via the
+        # Ai::AgentProductSyncService whenever the user attaches/detaches a
+        # product on the "Products" tab of the agent editor. We cap the list
+        # at MAX_PRODUCTS_PER_PROMPT so we don't blow up the context window
+        # on large catalogs (RAG / search tool is the path forward there).
+        assigned_products = agent.config.get("assigned_products") or []
+        max_products = int(os.getenv("MAX_PRODUCTS_PER_PROMPT", "50"))
+        if isinstance(assigned_products, list) and assigned_products:
+            truncated = False
+            if len(assigned_products) > max_products:
+                logger.warning(
+                    f"product catalog truncated: {len(assigned_products)} -> {max_products}"
+                )
+                assigned_products = assigned_products[:max_products]
+                truncated = True
+
+            lines = []
+            for product in assigned_products:
+                if not isinstance(product, dict):
+                    continue
+                kind = product.get("kind") or "physical"
+                name = product.get("name") or product.get("id") or "unknown"
+                price = product.get("default_price")
+                currency = product.get("currency") or "BRL"
+                url = product.get("purchase_url") or ""
+                description = (product.get("description") or "").strip()
+                if len(description) > 200:
+                    description = description[:200].rstrip() + "..."
+
+                price_str = ""
+                if price is not None:
+                    try:
+                        price_str = f"{currency} {float(price):.2f}"
+                    except (TypeError, ValueError):
+                        price_str = f"{currency} {price}"
+
+                pieces = [f"[{kind}] {name}"]
+                if price_str:
+                    pieces.append(price_str)
+                if url:
+                    pieces.append(url)
+                if description:
+                    pieces.append(description)
+                lines.append("- " + " — ".join(pieces))
+
+            header = (
+                "You can recommend the following catalog products during this conversation. "
+                "Always cite the exact name and purchase link as listed below. "
+                "Do not invent products that are not in this list."
+            )
+            footer = (
+                "\n(Catalog truncated to the first {max} entries.)".format(max=max_products)
+                if truncated else ""
+            )
+            agent_config_sections.append(
+                "<product-catalog>\n"
+                + header
+                + "\n\n"
+                + "\n".join(lines)
+                + footer
+                + "\n</product-catalog>"
+            )
+
         # Check if Google Calendar integration is enabled
         integrations = agent.config.get("integrations", {})
         google_calendar_config = integrations.get("google-calendar") or integrations.get("google_calendar")

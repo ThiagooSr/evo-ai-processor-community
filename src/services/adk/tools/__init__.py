@@ -14,6 +14,9 @@ from .text_to_speech import create_text_to_speech_tool
 # Google Sheets tools are imported conditionally to avoid circular imports
 # They are accessed via: from src.services.adk.tools.google_sheets import create_read_spreadsheet_tool, create_write_spreadsheet_tool, create_append_spreadsheet_tool, create_create_spreadsheet_tool
 
+# Knowledge Nexus tools are imported lazily inside tool_builder.py to avoid circular imports
+# They are accessed via: from src.services.adk.tools.knowledge_nexus import create_knowledge_nexus_search_tool
+
 __all__ = [
     "exit_loop",
     "create_text_to_speech_tool",

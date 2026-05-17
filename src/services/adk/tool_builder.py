@@ -272,12 +272,23 @@ class ToolBuilder:
             self.tools.append(self._create_exit_loop_tool())
 
         # Process CRM tools if enabled
-        # Enable CRM tools if transfer_to_human, allow_reminders, allow_contact_edit, or allow_pipeline_manipulation is enabled
+        # Enable CRM tools if transfer_to_human, allow_reminders, allow_contact_edit, allow_pipeline_manipulation
+        # or allow_manage_labels is enabled
         transfer_to_human_enabled = agent_config.get("transfer_to_human_enabled", False) or agent_config.get("transfer_to_human", False)
         allow_reminders = agent_config.get("allow_reminders", False)
         allow_contact_edit = agent_config.get("allow_contact_edit", False)
         allow_pipeline_manipulation = agent_config.get("allow_pipeline_manipulation", False)
-        enable_crm_tools = agent_config.get("enable_crm_tools", False) or transfer_to_human_enabled or allow_reminders or allow_contact_edit or allow_pipeline_manipulation
+        allow_manage_labels = agent_config.get("allow_manage_labels", False)
+        allow_product_sales = agent_config.get("allow_product_sales", False)
+        enable_crm_tools = (
+            agent_config.get("enable_crm_tools", False)
+            or transfer_to_human_enabled
+            or allow_reminders
+            or allow_contact_edit
+            or allow_pipeline_manipulation
+            or allow_manage_labels
+            or allow_product_sales
+        )
 
         if enable_crm_tools:
             from src.services.adk.tools.evo_crm import (
@@ -285,6 +296,8 @@ class ToolBuilder:
                 create_send_private_message_tool,
                 create_update_contact_tool,
                 create_pipeline_manipulation_tool,
+                create_manage_conversation_labels_tool,
+                create_link_product_to_pipeline_item_tool,
             )
 
             try:
@@ -330,6 +343,22 @@ class ToolBuilder:
                         + (f" with {len(pipeline_rules)} pipeline rules" if pipeline_rules else "")
                     )
 
+                # Add manage_conversation_labels tool if enabled
+                if allow_manage_labels:
+                    labels_tool = create_manage_conversation_labels_tool()
+                    self.tools.append(labels_tool)
+                    logger.info(
+                        f"Added manage_conversation_labels tool from CRM tools"
+                    )
+
+                # Add link_product_to_pipeline_item tool if enabled
+                if allow_product_sales:
+                    product_link_tool = create_link_product_to_pipeline_item_tool()
+                    self.tools.append(product_link_tool)
+                    logger.info(
+                        f"Added link_product_to_pipeline_item tool from CRM tools"
+                    )
+
             except Exception as e:
                 logger.error(f"Error loading CRM tools: {e}")
 
@@ -368,6 +397,89 @@ class ToolBuilder:
                     )
             except Exception as e:
                 logger.error(f"Error creating text_to_speech tool from ElevenLabs integration: {e}")
+
+        # Process Knowledge Nexus integration (knowledge_nexus_search)
+        knowledge_nexus_config = integrations.get("knowledge-nexus") or integrations.get("knowledge_nexus")
+        if knowledge_nexus_config and knowledge_nexus_config.get("connected"):
+            try:
+                base_url = (
+                    knowledge_nexus_config.get("nexus_base_url")
+                    or knowledge_nexus_config.get("baseUrl")
+                )
+                api_key = (
+                    knowledge_nexus_config.get("nexus_api_key")
+                    or knowledge_nexus_config.get("apiKey")
+                )
+                space_id = (
+                    knowledge_nexus_config.get("space_id")
+                    or knowledge_nexus_config.get("spaceId")
+                )
+
+                missing = [
+                    name
+                    for name, value in (
+                        ("nexus_base_url", base_url),
+                        ("nexus_api_key", api_key),
+                        ("space_id", space_id),
+                    )
+                    if not value
+                ]
+
+                if missing:
+                    logger.warning(
+                        "knowledge-nexus integration is connected but missing required fields "
+                        f"({', '.join(missing)}) — skipping tool creation."
+                    )
+                else:
+                    from src.services.adk.tools.knowledge_nexus import (
+                        create_knowledge_nexus_search_tool,
+                    )
+
+                    raw_top_k = knowledge_nexus_config.get("default_top_k", 10)
+                    try:
+                        default_top_k = int(raw_top_k)
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            f"knowledge-nexus: invalid 'default_top_k' value "
+                            f"({raw_top_k!r}), falling back to 10."
+                        )
+                        default_top_k = 10
+
+                    default_filters = knowledge_nexus_config.get("default_filters") or {}
+                    if not isinstance(default_filters, dict):
+                        logger.warning(
+                            f"knowledge-nexus: 'default_filters' must be an object, got "
+                            f"{type(default_filters).__name__} — using empty filters."
+                        )
+                        default_filters = {}
+
+                    raw_timeout = knowledge_nexus_config.get("timeout_seconds", 15.0)
+                    try:
+                        timeout_seconds = float(raw_timeout)
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            f"knowledge-nexus: invalid 'timeout_seconds' value "
+                            f"({raw_timeout!r}), falling back to 15.0."
+                        )
+                        timeout_seconds = 15.0
+
+                    self.tools.append(
+                        create_knowledge_nexus_search_tool(
+                            nexus_base_url=base_url,
+                            nexus_api_key=api_key,
+                            space_id=space_id,
+                            default_top_k=default_top_k,
+                            default_filters=default_filters,
+                            timeout_seconds=timeout_seconds,
+                        )
+                    )
+                    logger.info(
+                        f"Added knowledge_nexus_search tool "
+                        f"(space_id={space_id}, top_k={default_top_k}, "
+                        f"timeout={timeout_seconds}s)"
+                    )
+            except Exception as e:
+                logger.error(f"Error creating knowledge_nexus_search tool: {e}")
 
         # Process Google Calendar integration
         logger.debug(f"Checking Google Calendar integration. Integrations keys: {list(integrations.keys()) if integrations else 'None'}")

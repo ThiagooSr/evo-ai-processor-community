@@ -31,6 +31,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
     status,
     WebSocket,
     WebSocketDisconnect,
@@ -624,9 +625,10 @@ async def websocket_live_chat(
     }
 )
 async def chat(
-    request: ChatRequest,
+    payload: ChatRequest,
     agent_id: str,
     session_id: str,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
     _: None = Depends(RequirePermission("ai_agent_processor", "execute")),
@@ -637,13 +639,13 @@ async def chat(
         final_response = await run_agent_adk(
             agent_id,
             user_id,
-            request.message,
+            payload.message,
             session_service,
             artifacts_service,
             memory_service,
             db,
             session_id=session_id,
-            files=request.files,
+            files=payload.files,
         )
 
         return success_response(
