@@ -213,6 +213,11 @@ app.include_router(canva_router, prefix=API_PREFIX)
 app.include_router(canva_callback_router, prefix=API_PREFIX)
 app.include_router(integrations_router, prefix=API_PREFIX)
 
+# Maxnivel webhook routes (Kaiabi custom integration)
+import src.api.maxnivel_webhook_routes
+maxnivel_webhook_router = src.api.maxnivel_webhook_routes.router
+app.include_router(maxnivel_webhook_router, prefix=API_PREFIX)
+
 # System routes (health and ready) - without API prefix for Kubernetes compatibility
 app.include_router(system_router)
 
