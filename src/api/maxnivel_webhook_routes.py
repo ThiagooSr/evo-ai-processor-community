@@ -202,13 +202,13 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
         logger.error(f"[CRM] Erro ao criar conversa: {e}")
         return None
 
-    # ÔöÇÔöÇ 3. Registrar mensagem enviada ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    # ─── 3. Registrar mensagem enviada ───────────────────────────────────────
     try:
         conteudo = (
-            f"­ƒôñ Template *{template_name}* enviado via WhatsApp\n"
-            f"­ƒæñ Distribuidor: {nome}\n"
-            f"­ƒô▒ N├║mero: +{telefone}\n"
-            f"­ƒåö ID Meta: {meta_msg_id}"
+            f"📱 Template *{template_name}* enviado via WhatsApp\n"
+            f"👤 Distribuidor: {nome}\n"
+            f"📞 Número: +{telefone}\n"
+            f"🆔 ID Meta: {meta_msg_id}"
         )
         r = requests.post(
             f"{base}/conversations/{conv_id}/messages",
@@ -217,7 +217,7 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
             timeout=8,
         )
         if r.status_code in (200, 201):
-            logger.info(f"[CRM] Ô£à Mensagem registrada na conversa {conv_id}")
+            logger.info(f"[CRM] ✅ Mensagem registrada na conversa {conv_id}")
         else:
             logger.error(f"[CRM] Falha ao registrar mensagem: {r.json()}")
     except Exception as e:
