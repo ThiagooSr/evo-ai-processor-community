@@ -193,7 +193,7 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
             timeout=8,
         )
         if r.status_code in (200, 201):
-            conv_id = r.json().get("id")
+            conv_id = r.json().get("data", {}).get("id")
             logger.info(f"[CRM] Conversa criada: id={conv_id}")
         else:
             logger.error(f"[CRM] Falha ao criar conversa: {r.json()}")
