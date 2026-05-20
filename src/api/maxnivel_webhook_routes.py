@@ -195,6 +195,17 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
         if r.status_code in (200, 201):
             conv_id = r.json().get("data", {}).get("id")
             logger.info(f"[CRM] Conversa criada: id={conv_id}")
+            if conv_id:
+                try:
+                    requests.post(
+                        f"{base}/conversations/{conv_id}/labels",
+                        headers=headers,
+                        json={"labels": ["cadastro-distribuidor"]},
+                        timeout=5,
+                    )
+                    logger.info(f"[CRM] Etiqueta 'cadastro-distribuidor' aplicada à conversa {conv_id}")
+                except Exception as le:
+                    logger.warning(f"[CRM] Erro não crítico ao aplicar etiqueta: {le}")
         else:
             logger.error(f"[CRM] Falha ao criar conversa: {r.json()}")
             return None
