@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Webhook Routes ÔÇö Integra├º├Áes Externas (Maxnivel)
 
@@ -133,7 +133,7 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
         return None
 
     headers = {"api_access_token": crm_token, "Content-Type": "application/json"}
-    base = f"{crm_url}/api/v1/accounts/{crm_account_id}"
+    base = f"{crm_url}/api/v1"
 
     # ÔöÇÔöÇ 1. Buscar ou criar contato ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     contact_id: int | None = None
@@ -173,12 +173,17 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
     # ÔöÇÔöÇ 2. Criar conversa ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     conv_id: int | None = None
     try:
+        inbox_id_val = int(crm_inbox_id)
+    except ValueError:
+        inbox_id_val = crm_inbox_id
+
+    try:
         r = requests.post(
             f"{base}/conversations",
             headers=headers,
             json={
                 "contact_id": contact_id,
-                "inbox_id": int(crm_inbox_id),
+                "inbox_id": inbox_id_val,
                 "additional_attributes": {
                     "origem": "cadastro_maxnivel",
                     "template": template_name,
