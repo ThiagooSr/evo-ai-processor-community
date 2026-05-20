@@ -145,7 +145,7 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
             timeout=8,
         )
         if r.status_code == 200:
-            contacts = r.json().get("payload", {}).get("contacts", [])
+            contacts = r.json().get("data", [])
             if contacts:
                 contact_id = contacts[0]["id"]
                 logger.info(f"[CRM] Contato encontrado: id={contact_id}")
@@ -161,7 +161,7 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
                 timeout=8,
             )
             if r.status_code in (200, 201):
-                contact_id = r.json().get("id")
+                contact_id = r.json().get("data", {}).get("contact", {}).get("id")
                 logger.info(f"[CRM] Contato criado: id={contact_id}")
             else:
                 logger.error(f"[CRM] Falha ao criar contato: {r.json()}")
