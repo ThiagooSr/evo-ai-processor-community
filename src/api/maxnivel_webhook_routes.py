@@ -224,7 +224,7 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
         r = requests.post(
             f"{base}/conversations/{conv_id}/messages",
             headers=headers,
-            json={"content": conteudo, "message_type": "outgoing", "private": False},
+            json={"content": conteudo, "message_type": "outgoing", "private": True},
             timeout=8,
         )
         if r.status_code in (200, 201):
