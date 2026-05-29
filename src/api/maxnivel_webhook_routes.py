@@ -237,6 +237,73 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
     return conv_id
 
 
+def _registrar_no_pipeline(conv_id: int) -> bool:
+    """
+    Busca os pipelines do CRM, identifica o padrão (ou o primeiro disponível)
+    e cadastra a conversa informada no pipeline.
+    """
+    crm_url = os.getenv("CRM_URL", "https://crm.kaiabi.com").rstrip("/")
+    crm_token = os.getenv("CRM_API_TOKEN", "").strip()
+
+    if not crm_token:
+        logger.warning("[CRM Pipeline] CRM_API_TOKEN não configurado — pulando registro no pipeline.")
+        return False
+
+    headers = {"api_access_token": crm_token, "Content-Type": "application/json"}
+    base = f"{crm_url}/api/v1"
+
+    # 1. Buscar pipelines ativos
+    pipeline_id = None
+    try:
+        r = requests.get(f"{base}/pipelines", headers=headers, timeout=8)
+        if r.status_code == 200:
+            pipelines = r.json().get("data", [])
+            if not pipelines:
+                logger.warning("[CRM Pipeline] Nenhum pipeline encontrado para associar a conversa.")
+                return False
+            
+            # Tenta encontrar o pipeline padrão (is_default == True)
+            default_pipeline = next((p for p in pipelines if p.get("is_default") is True), None)
+            if default_pipeline:
+                pipeline_id = default_pipeline.get("id")
+                logger.info(f"[CRM Pipeline] Pipeline padrão encontrado: id={pipeline_id}")
+            else:
+                # Fallback para o primeiro pipeline da lista
+                pipeline_id = pipelines[0].get("id")
+                logger.info(f"[CRM Pipeline] Pipeline padrão não encontrado. Usando primeiro pipeline: id={pipeline_id}")
+        else:
+            logger.error(f"[CRM Pipeline] Erro ao buscar pipelines: {r.status_code} — {r.text}")
+            return False
+    except Exception as e:
+        logger.error(f"[CRM Pipeline] Exceção ao buscar pipelines: {e}")
+        return False
+
+    if not pipeline_id:
+        return False
+
+    # 2. Cadastrar conversa no pipeline
+    try:
+        payload = {
+            "type": "conversation",
+            "item_id": str(conv_id)
+        }
+        r = requests.post(
+            f"{base}/pipelines/{pipeline_id}/pipeline_items",
+            headers=headers,
+            json=payload,
+            timeout=8
+        )
+        if r.status_code in (200, 201):
+            logger.info(f"[CRM Pipeline] ✅ Conversa {conv_id} registrada com sucesso no pipeline {pipeline_id}")
+            return True
+        else:
+            logger.error(f"[CRM Pipeline] Falha ao registrar conversa no pipeline: {r.status_code} — {r.text}")
+            return False
+    except Exception as e:
+        logger.error(f"[CRM Pipeline] Exceção ao registrar no pipeline: {e}")
+        return False
+
+
 # =============================================================================
 # Endpoint principal
 # =============================================================================
@@ -324,6 +391,7 @@ async def cadastro_distribuidor_webhook(
         conv_id = _registrar_no_crm(nome, telefone, template_name, meta_msg_id)
         if conv_id:
             logger.info(f"[Webhook Cadastro] Registrado no CRM ÔåÆ conversa #{conv_id}")
+            _registrar_no_pipeline(conv_id)
     except Exception as e:
         logger.error(f"[Webhook Cadastro] Erro ao registrar no CRM (n├úo cr├¡tico): {e}")
 
