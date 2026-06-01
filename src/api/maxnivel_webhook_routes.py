@@ -239,8 +239,13 @@ def _registrar_no_crm(nome: str, telefone: str, template_name: str, meta_msg_id:
 
 def _registrar_no_pipeline(conv_id: int) -> bool:
     """
-    Busca os pipelines do CRM, identifica o padrão (ou o primeiro disponível)
-    e cadastra a conversa informada no pipeline.
+    Busca o pipeline correto e cadastra a conversa no estágio adequado.
+
+    Variáveis de ambiente (em ordem de prioridade):
+        CRM_PIPELINE_ID          → ID direto do pipeline (mais rápido)
+        CRM_PIPELINE_NAME        → Busca pelo nome do pipeline (padrão: "distribuidor")
+        CRM_PIPELINE_STAGE_ID    → ID direto do estágio
+        CRM_PIPELINE_STAGE_NAME  → Busca pelo nome do estágio (padrão: "novo distribuidor")
     """
     crm_url = os.getenv("CRM_URL", "https://crm.kaiabi.com").rstrip("/")
     crm_token = os.getenv("CRM_API_TOKEN", "").strip()
@@ -252,56 +257,117 @@ def _registrar_no_pipeline(conv_id: int) -> bool:
     headers = {"api_access_token": crm_token, "Content-Type": "application/json"}
     base = f"{crm_url}/api/v1"
 
-    # 1. Buscar pipelines ativos
-    pipeline_id = None
-    try:
-        r = requests.get(f"{base}/pipelines", headers=headers, timeout=8)
-        if r.status_code == 200:
-            pipelines = r.json().get("data", [])
-            if not pipelines:
-                logger.warning("[CRM Pipeline] Nenhum pipeline encontrado para associar a conversa.")
-                return False
-            
-            # Tenta encontrar o pipeline padrão (is_default == True)
-            default_pipeline = next((p for p in pipelines if p.get("is_default") is True), None)
-            if default_pipeline:
-                pipeline_id = default_pipeline.get("id")
-                logger.info(f"[CRM Pipeline] Pipeline padrão encontrado: id={pipeline_id}")
+    # Configurações via env vars
+    pipeline_id_env   = os.getenv("CRM_PIPELINE_ID", "").strip()
+    pipeline_name_env = os.getenv("CRM_PIPELINE_NAME", "distribuidor").strip().lower()
+    stage_id_env      = os.getenv("CRM_PIPELINE_STAGE_ID", "").strip()
+    stage_name_env    = os.getenv("CRM_PIPELINE_STAGE_NAME", "novo distribuidor").strip().lower()
+
+    # ── 1. Resolver o pipeline ──────────────────────────────────────────────
+    pipeline_id   = pipeline_id_env if pipeline_id_env else None
+    pipeline_data = None
+
+    if not pipeline_id:
+        try:
+            r = requests.get(f"{base}/pipelines", headers=headers, timeout=8)
+            if r.status_code == 200:
+                pipelines = r.json().get("data", [])
+                if not pipelines:
+                    logger.warning("[CRM Pipeline] Nenhum pipeline encontrado.")
+                    return False
+
+                # Prioridade 1: pipeline cujo nome contenha a keyword configurada
+                matched = next(
+                    (p for p in pipelines if pipeline_name_env in (p.get("name") or "").lower()),
+                    None
+                )
+                # Prioridade 2: pipeline padrão
+                if not matched:
+                    matched = next((p for p in pipelines if p.get("is_default") is True), None)
+                # Prioridade 3: primeiro da lista
+                if not matched:
+                    matched = pipelines[0]
+
+                pipeline_id   = matched.get("id")
+                pipeline_data = matched
+                logger.info(
+                    f"[CRM Pipeline] Pipeline selecionado: id={pipeline_id} | nome='{matched.get('name')}'"
+                )
             else:
-                # Fallback para o primeiro pipeline da lista
-                pipeline_id = pipelines[0].get("id")
-                logger.info(f"[CRM Pipeline] Pipeline padrão não encontrado. Usando primeiro pipeline: id={pipeline_id}")
-        else:
-            logger.error(f"[CRM Pipeline] Erro ao buscar pipelines: {r.status_code} — {r.text}")
+                logger.error(f"[CRM Pipeline] Erro ao buscar pipelines: {r.status_code} — {r.text}")
+                return False
+        except Exception as e:
+            logger.error(f"[CRM Pipeline] Exceção ao buscar pipelines: {e}")
             return False
-    except Exception as e:
-        logger.error(f"[CRM Pipeline] Exceção ao buscar pipelines: {e}")
-        return False
 
     if not pipeline_id:
         return False
 
-    # 2. Cadastrar conversa no pipeline
+    # ── 2. Resolver o estágio ───────────────────────────────────────────────
+    stage_id = stage_id_env if stage_id_env else None
+
+    if not stage_id:
+        # Buscar estágios do pipeline selecionado
+        try:
+            r = requests.get(
+                f"{base}/pipelines/{pipeline_id}/pipeline_stages",
+                headers=headers,
+                timeout=8,
+            )
+            if r.status_code == 200:
+                stages = r.json().get("data", [])
+                if stages:
+                    # Prioridade 1: estágio cujo nome contenha a keyword configurada
+                    matched_stage = next(
+                        (s for s in stages if stage_name_env in (s.get("name") or "").lower()),
+                        None
+                    )
+                    # Prioridade 2: primeiro estágio do pipeline
+                    if not matched_stage:
+                        matched_stage = stages[0]
+
+                    stage_id = matched_stage.get("id")
+                    logger.info(
+                        f"[CRM Pipeline] Estágio selecionado: id={stage_id} | nome='{matched_stage.get('name')}'"
+                    )
+            else:
+                logger.warning(
+                    f"[CRM Pipeline] Não foi possível buscar estágios: {r.status_code} — pulando stage_id."
+                )
+        except Exception as e:
+            logger.warning(f"[CRM Pipeline] Exceção ao buscar estágios: {e} — pulando stage_id.")
+
+    # ── 3. Cadastrar conversa no pipeline com o estágio correto ────────────
     try:
-        payload = {
+        payload: dict = {
             "type": "conversation",
-            "item_id": str(conv_id)
+            "item_id": str(conv_id),
         }
+        if stage_id:
+            payload["pipeline_stage_id"] = str(stage_id)
+
         r = requests.post(
             f"{base}/pipelines/{pipeline_id}/pipeline_items",
             headers=headers,
             json=payload,
-            timeout=8
+            timeout=8,
         )
         if r.status_code in (200, 201):
-            logger.info(f"[CRM Pipeline] ✅ Conversa {conv_id} registrada com sucesso no pipeline {pipeline_id}")
+            logger.info(
+                f"[CRM Pipeline] ✅ Conversa {conv_id} registrada no pipeline {pipeline_id}"
+                f"{f' / estágio {stage_id}' if stage_id else ''}"
+            )
             return True
         else:
-            logger.error(f"[CRM Pipeline] Falha ao registrar conversa no pipeline: {r.status_code} — {r.text}")
+            logger.error(
+                f"[CRM Pipeline] Falha ao registrar conversa: {r.status_code} — {r.text}"
+            )
             return False
     except Exception as e:
         logger.error(f"[CRM Pipeline] Exceção ao registrar no pipeline: {e}")
         return False
+
+
 
 
 # =============================================================================
