@@ -27,6 +27,9 @@
 └──────────────────────────────────────────────────────────────────────────────┘
 """
 
+from datetime import datetime, timezone
+from pydantic import Field
+from typing import List
 from fastapi import APIRouter, status, Depends, Request
 from src.schemas.schemas import (
     CustomMCPDiscoverToolsCreate,
@@ -35,12 +38,15 @@ from src.schemas.schemas import (
 from src.services import custom_mcp_server_service
 from src.api.dependencies import get_current_user
 from src.middleware.permissions import RequirePermission
-from src.utils.response import success_response, error_response, map_status_to_error_code
+from src.utils.response import success_response, error_response, map_status_to_error_code, MetaInfo
 from src.schemas.responses import SuccessResponse, ErrorResponse
 from src.schemas.response_models import DiscoverToolsResponse
 import logging
 
 logger = logging.getLogger(__name__)
+
+class CustomDiscoverToolsResponse(SuccessResponse[DiscoverToolsResponse]):
+    tools: List[dict] = Field(..., description="Duplicate of tools at root level for Go core compatibility")
 
 router = APIRouter(
     prefix="/custom-mcp-servers",
@@ -49,13 +55,14 @@ router = APIRouter(
 
 @router.post(
     "/discover-tools",
-    response_model=SuccessResponse[DiscoverToolsResponse],
+    response_model=CustomDiscoverToolsResponse,
     responses={
         200: {"description": "Tools discovered successfully"},
         500: {"model": ErrorResponse, "description": "Internal server error"}
     }
 )
 async def create_discover_tools(
+    request: Request,
     discover_tools: CustomMCPDiscoverToolsCreate,
     permission: None = Depends(RequirePermission("ai_custom_mcp_servers", "discover")),
     _: dict = Depends(get_current_user),
@@ -72,21 +79,31 @@ async def create_discover_tools(
         if result.get("success") is False:
             error_msg = result.get("error", "Unknown error")
             logger.error(f"Error discovering tools: {error_msg}")
-            # Return empty tools list instead of raising exception
-            # This allows the Go service to handle the error gracefully
-            return CustomMCPDiscoverToolsResponse(tools=[])
+            meta_info = MetaInfo(timestamp=datetime.now(timezone.utc).isoformat())
+            return {
+                "success": False,
+                "data": {"tools": []},
+                "meta": meta_info,
+                "tools": [],
+                "message": f"Error: {error_msg}"
+            }
         
         discovered_tools = result.get("tools", [])
         logger.info(f"Discovered {len(discovered_tools)} tools from custom MCP server")
         
-        return success_response(
-            data=discovered_tools,
-            message=f"Discovered {len(discovered_tools)} tools from custom MCP server"
-        )
+        meta_info = MetaInfo(timestamp=datetime.now(timezone.utc).isoformat())
+        return {
+            "success": True,
+            "data": {"tools": discovered_tools},
+            "meta": meta_info,
+            "tools": discovered_tools,
+            "message": f"Discovered {len(discovered_tools)} tools from custom MCP server"
+        }
         
     except Exception as e:
         logger.error(f"Unexpected error discovering tools: {str(e)}")
         return error_response(
+            request=request,
             code=map_status_to_error_code(status.HTTP_500_INTERNAL_SERVER_ERROR),
             message=f"Error discovering tools: {str(e)}",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
