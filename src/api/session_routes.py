@@ -185,9 +185,8 @@ async def create_new_session(
             status_code=status.HTTP_404_NOT_FOUND
         )
 
-    # Verify access (skip for agent bots as they're already validated)
-    if not is_agent_bot:
-        has_access, is_shared_access = await verify_agent_access(db, agent, "read")
+    # Verify access (agent bots are constrained to their own agent inside)
+    has_access, is_shared_access = await verify_agent_access(db, agent, "read", current_user)
 
     # Get user identifier
     default_user_id = str(current_user.get("user_id") or current_user.get("email") or "") if current_user else ""
@@ -373,7 +372,7 @@ async def get_agent_sessions(
         )
 
     # Verify if the user has access to the agent (including shared folder access)
-    has_access, is_shared_access = await verify_agent_access(db, agent, "read")
+    has_access, is_shared_access = await verify_agent_access(db, agent, "read", current_user)
 
     # List ALL sessions for the agent (both test sessions and real sessions)
     
@@ -448,7 +447,7 @@ async def bulk_delete_sessions(
                 if agent:
                     try:
                         has_access, is_shared_access = await verify_agent_access(
-                            db, agent, "read"
+                            db, agent, "read", current_user
                         )
                         validated_session_ids.append(session_id)
                     except HTTPException as e:
@@ -542,7 +541,7 @@ async def get_session(
         agent = await agent_service.get_agent(db, agent_id)
         if agent:
             has_access, is_shared_access = await verify_agent_access(
-                db, agent, "read"
+                db, agent, "read", current_user
             )
 
     return success_response(
@@ -595,7 +594,7 @@ async def get_agent_messages(
         agent = await agent_service.get_agent(db, agent_id)
         if agent:
             has_access, is_shared_access = await verify_agent_access(
-                db, agent, "read"
+                db, agent, "read", current_user
             )
 
     # Get app_name and user_id from the session object instead of parsing session_id
@@ -629,40 +628,7 @@ async def get_agent_messages(
                 skipped_count += 1
                 continue
 
-            def process_dict(d):
-                if isinstance(d, dict):
-                    for key, value in list(d.items()):
-                        if isinstance(value, bytes):
-                            try:
-                                d[key] = base64.b64encode(value).decode("utf-8")
-                                logger.debug(f"Converted bytes field to base64: {key}")
-                            except Exception as e:
-                                logger.error(f"Error encoding bytes to base64: {str(e)}")
-                                d[key] = None
-                        elif isinstance(value, dict):
-                            process_dict(value)
-                        elif isinstance(value, list):
-                            for item in value:
-                                if isinstance(item, (dict, list)):
-                                    process_dict(item)
-                elif isinstance(d, list):
-                    for i, item in enumerate(d):
-                        if isinstance(item, bytes):
-                            try:
-                                d[i] = base64.b64encode(item).decode("utf-8")
-                            except Exception as e:
-                                logger.error(
-                                    f"Error encoding bytes to base64 in list: {str(e)}"
-                                )
-                                d[i] = None
-                        elif isinstance(item, (dict, list)):
-                            process_dict(item)
-                return d
-
             try:
-                # Process all event dictionary
-                event_dict = process_dict(event_dict)
-
                 # Process the content parts specifically
                 if event_dict.get("content") and event_dict["content"].get("parts"):
                     for part in event_dict["content"]["parts"]:
@@ -820,7 +786,7 @@ async def remove_session(
             agent = await agent_service.get_agent(db, agent_id)
             if agent:
                 has_access, is_shared_access = await verify_agent_access(
-                    db, agent, "read"
+                    db, agent, "read", current_user
                 )
 
         # Delete the session (from both database and ADK)
@@ -883,7 +849,7 @@ async def get_session_metadata_endpoint(
         agent = await agent_service.get_agent(db, agent_id)
         if agent:
             has_access, is_shared_access = await verify_agent_access(
-                db, agent, "read"
+                db, agent, "read", current_user
             )
 
     # Get metadata
@@ -940,7 +906,7 @@ async def update_session_metadata_endpoint(
         agent = await agent_service.get_agent(db, agent_id)
         if agent:
             has_access, is_shared_access = await verify_agent_access(
-                db, agent, "write"
+                db, agent, "write", current_user
             )
 
     # Use user_id from the authenticated user
@@ -1011,7 +977,7 @@ async def delete_session_metadata_endpoint(
         agent = await agent_service.get_agent(db, agent_id)
         if agent:
             has_access, is_shared_access = await verify_agent_access(
-                db, agent, "write"
+                db, agent, "write", current_user
             )
 
     # Use user_id from the authenticated user
