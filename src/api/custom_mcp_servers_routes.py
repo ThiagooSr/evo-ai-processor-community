@@ -64,7 +64,12 @@ router = APIRouter(
 async def create_discover_tools(
     request: Request,
     discover_tools: CustomMCPDiscoverToolsCreate,
-    permission: None = Depends(RequirePermission("ai_custom_mcp_servers", "discover")),
+    # discover-tools enumera as tools de um servidor MCP = uma LEITURA. Usa a action
+    # "read" (que existe no catálogo do auth e é grantada a quem tem create/list),
+    # não "discover" — essa action NÃO existe em resource_actions_config → 403 pra
+    # todos. Os endpoints-irmãos de discover (canva/asana) nem têm gate; este era o
+    # único, com uma action fantasma. Coerência: read.
+    permission: None = Depends(RequirePermission("ai_custom_mcp_servers", "read")),
     _: dict = Depends(get_current_user),
 ):
     """Discover tools from a custom MCP server"""
@@ -107,4 +112,44 @@ async def create_discover_tools(
             code=map_status_to_error_code(status.HTTP_500_INTERNAL_SERVER_ERROR),
             message=f"Error discovering tools: {str(e)}",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@router.post(
+    "/test-connection",
+    responses={
+        200: {"description": "Test result returned (success or failure inside body)"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def test_connection(
+    test_request: CustomMCPDiscoverToolsCreate,
+    # EVO-2139: same permission model as discover-tools — testing enumerates
+    # the tools (via MCP `initialize`) which is a read operation on the server
+    # config. The Go core-service already gates the caller by resource; here
+    # we just verify the user can read ai_custom_mcp_servers.
+    permission: None = Depends(RequirePermission("ai_custom_mcp_servers", "read")),
+    _: dict = Depends(get_current_user),
+):
+    """Test connection to a custom MCP server via MCP handshake.
+
+    EVO-2139: Go `service.Test()` delegates here instead of doing a raw
+    `GET /health` check that never worked for real MCP servers.
+    """
+    logger.info(f"🔌 Test connection endpoint called for URL: {test_request.url}")
+
+    try:
+        result = await custom_mcp_server_service.test_custom_mcp_server_connection(
+            test_request
+        )
+        # Always 200 with the result envelope — success/failure lives inside
+        # `success`. This matches the discover-tools pattern and lets the Go
+        # side render failures cleanly instead of surfacing 500s to the UI.
+        return result
+    except Exception as e:
+        logger.error(f"Unexpected error testing connection: {str(e)}")
+        return error_response(
+            code=map_status_to_error_code(status.HTTP_500_INTERNAL_SERVER_ERROR),
+            message=f"Error testing connection: {str(e)}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
