@@ -13,12 +13,31 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
+def _unwrap_envelope(body: Any) -> Dict[str, Any]:
+    """Unwrap the CRM's success-response envelope.
+
+    The CRM's service endpoints wrap their payload as
+    ``{"success": true, "data": {...}, "meta": {...}}``. The credential
+    fields (e.g. ``github_client_id``) live under ``data``, not at the root.
+    Reading them off the root silently yields ``None`` for every field.
+
+    Defensive: returns ``body["data"]`` when it's a dict, else the body itself
+    (so a hypothetical un-enveloped endpoint keeps working), else ``{}``.
+    """
+    if isinstance(body, dict):
+        inner = body.get("data")
+        if isinstance(inner, dict):
+            return inner
+        return body
+    return {}
+
+
 class GlobalConfigService:
     """Service for fetching global configuration from evo-ai-crm."""
 
     def __init__(self):
         """Initialize global config service."""
-        self.crm_base_url = os.getenv("EVOLUTION_BASE_URL", "http://localhost:3000")
+        self.crm_base_url = os.getenv("EVO_AI_CRM_URL") or os.getenv("EVOLUTION_BASE_URL", "http://localhost:3000")
         self.api_token = os.getenv("EVOAI_CRM_API_TOKEN")
         self._config_cache: Optional[Dict[str, Any]] = None
 
@@ -97,9 +116,15 @@ class GlobalConfigService:
 
         return value
 
-    async def get_google_calendar_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_google_calendar_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch Google Calendar OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -111,12 +136,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("google_calendar_client_id")
                     client_secret = data.get("google_calendar_client_secret")
                     redirect_uri = data.get("google_calendar_redirect_uri")
@@ -165,9 +194,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_google_sheets_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_google_sheets_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch Google Sheets OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -179,12 +214,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("google_sheets_client_id")
                     client_secret = data.get("google_sheets_client_secret")
                     redirect_uri = data.get("google_sheets_redirect_uri")
@@ -233,9 +272,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_github_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_github_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch GitHub OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -247,12 +292,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("github_client_id")
                     client_secret = data.get("github_client_secret")
                     redirect_uri = data.get("github_redirect_uri")
@@ -301,9 +350,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_notion_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_notion_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch Notion OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -315,12 +370,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("notion_client_id")
                     client_secret = data.get("notion_client_secret")
                     redirect_uri = data.get("notion_redirect_uri")
@@ -369,9 +428,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_stripe_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_stripe_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch Stripe OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, redirect_uri, and authorization_url
@@ -383,12 +448,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("stripe_client_id")
                     client_secret = data.get("stripe_client_secret")
                     redirect_uri = data.get("stripe_redirect_uri")
@@ -432,9 +501,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_monday_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_monday_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch Monday OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -446,12 +521,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("monday_client_id")
                     client_secret = data.get("monday_client_secret")
                     redirect_uri = data.get("monday_redirect_uri")
@@ -493,9 +572,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_atlassian_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_atlassian_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch Atlassian OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -507,12 +592,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("atlassian_client_id")
                     client_secret = data.get("atlassian_client_secret")
                     redirect_uri = data.get("atlassian_redirect_uri")
@@ -554,9 +643,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_asana_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_asana_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch Asana OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -568,12 +663,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("asana_client_id")
                     client_secret = data.get("asana_client_secret")
                     redirect_uri = data.get("asana_redirect_uri")
@@ -615,9 +714,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_hubspot_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_hubspot_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch HubSpot OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -629,12 +734,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("hubspot_client_id")
                     client_secret = data.get("hubspot_client_secret")
                     redirect_uri = data.get("hubspot_redirect_uri")
@@ -697,9 +806,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_linear_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_linear_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch Linear OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -711,12 +826,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("linear_client_id")
                     client_secret = data.get("linear_client_secret")
                     redirect_uri = data.get("linear_redirect_uri")
@@ -758,9 +877,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_paypal_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_paypal_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch PayPal OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -772,12 +897,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("paypal_client_id")
                     client_secret = data.get("paypal_client_secret")
                     redirect_uri = data.get("paypal_redirect_uri")
@@ -823,9 +952,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_canva_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_canva_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch Canva OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant and resolves the
+                BYO (per-tenant) credential. When None (community standalone),
+                the header is omitted and the call is a no-op / global resolution.
 
         Returns:
             Dictionary with client_id, client_secret, and redirect_uri
@@ -837,12 +972,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     client_id = data.get("canva_client_id")
                     client_secret = data.get("canva_client_secret")
                     redirect_uri = data.get("canva_redirect_uri")
@@ -884,9 +1023,15 @@ class GlobalConfigService:
                 "redirect_uri": None
             }
 
-    async def get_supabase_credentials(self) -> Dict[str, Optional[str]]:
+    async def get_supabase_credentials(self, tenant_id: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
         Fetch Supabase OAuth credentials from CRM's service-authenticated endpoint.
+
+        Args:
+            tenant_id: Optional tenant id. When present (enterprise), forwarded as
+                X-Evo-Tenant-Id so the CRM binds the tenant. Supabase carries only
+                a redirect_uri (no BYO client_id/secret), so this is forwarded for
+                consistency with the other providers; standalone leaves it off.
 
         Returns:
             Dictionary with redirect_uri only
@@ -900,12 +1045,16 @@ class GlobalConfigService:
                 "X-Service-Token": self.api_token,
                 "Content-Type": "application/json"
             }
+            # Only attach the tenant header when a tenant is bound (enterprise);
+            # standalone/community leaves it off (no-op).
+            if tenant_id:
+                headers["X-Evo-Tenant-Id"] = tenant_id
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    data = _unwrap_envelope(response.json())
                     redirect_uri = data.get("supabase_redirect_uri")
 
                     logger.info(

@@ -27,6 +27,7 @@ from src.schemas.response_models import (
 )
 
 from src.api.dependencies import get_current_user
+from src.api.oauth_redirect import derive_redirect_uri
 from src.middleware.permissions import RequirePermission
 
 logger = logging.getLogger(__name__)
@@ -77,11 +78,16 @@ async def get_linear_service_optional(
 
     # Fetch credentials from global config
     config_service = get_global_config_service()
-    credentials = await config_service.get_linear_credentials()
+    # Thread the request's tenant (enterprise) into the credential fetch so the
+    # CRM resolves the per-tenant BYO credential. None under community/standalone
+    # (runtime_context default) → the header is omitted and the call is a no-op.
+    from src.evo_extension_points import runtime_context
+    cid = runtime_context.current_context_id(request)
+    credentials = await config_service.get_linear_credentials(tenant_id=cid)
 
     client_id = credentials.get("client_id")  # Optional - can be obtained via dynamic registration
     client_secret = credentials.get("client_secret")  # Optional - can be obtained via dynamic registration
-    redirect_uri = credentials.get("redirect_uri")
+    redirect_uri = credentials.get("redirect_uri") or derive_redirect_uri(request, "linear")
 
     # Only redirect_uri is required - client_id and client_secret can be obtained via dynamic registration (RFC 7591)
     if not redirect_uri:
@@ -102,7 +108,8 @@ async def get_linear_service_optional(
         core_service_url=core_service_url,
         user_token=user_token,
         client_id=client_id,  # Optional
-        client_secret=client_secret  # Optional
+        client_secret=client_secret,  # Optional
+        tenant_id=cid
     )
 
 
@@ -115,11 +122,16 @@ async def get_linear_service(
 
     # Fetch credentials from global config
     config_service = get_global_config_service()
-    credentials = await config_service.get_linear_credentials()
+    # Thread the request's tenant (enterprise) into the credential fetch so the
+    # CRM resolves the per-tenant BYO credential. None under community/standalone
+    # (runtime_context default) → the header is omitted and the call is a no-op.
+    from src.evo_extension_points import runtime_context
+    cid = runtime_context.current_context_id(request)
+    credentials = await config_service.get_linear_credentials(tenant_id=cid)
 
     client_id = credentials.get("client_id")  # Optional - can be obtained via dynamic registration
     client_secret = credentials.get("client_secret")  # Optional - can be obtained via dynamic registration
-    redirect_uri = credentials.get("redirect_uri")
+    redirect_uri = credentials.get("redirect_uri") or derive_redirect_uri(request, "linear")
 
     # Only redirect_uri is required - client_id and client_secret can be obtained via dynamic registration (RFC 7591)
     if not redirect_uri:
@@ -148,7 +160,8 @@ async def get_linear_service(
         core_service_url=core_service_url,
         user_token=user_token,
         client_id=client_id,  # Optional
-        client_secret=client_secret  # Optional
+        client_secret=client_secret,  # Optional
+        tenant_id=cid
     )
 
 

@@ -27,6 +27,7 @@ from src.schemas.response_models import (
 )
 
 from src.api.dependencies import get_current_user
+from src.api.oauth_redirect import derive_redirect_uri
 from src.middleware.permissions import RequirePermission
 
 logger = logging.getLogger(__name__)
@@ -78,11 +79,16 @@ async def get_hubspot_service(
 
     # Fetch credentials from global config
     config_service = get_global_config_service()
-    credentials = await config_service.get_hubspot_credentials()
+    # Thread the request's tenant (enterprise) into the credential fetch so the
+    # CRM resolves the per-tenant BYO credential. None under community/standalone
+    # (runtime_context default) → the header is omitted and the call is a no-op.
+    from src.evo_extension_points import runtime_context
+    cid = runtime_context.current_context_id(request)
+    credentials = await config_service.get_hubspot_credentials(tenant_id=cid)
 
     client_id = credentials.get("client_id")
     client_secret = credentials.get("client_secret")
-    redirect_uri = credentials.get("redirect_uri")
+    redirect_uri = credentials.get("redirect_uri") or derive_redirect_uri(request, "hubspot")
 
     logger.info(
         f"HubSpot credentials loaded: client_id={'***' + client_id[-4:] if client_id and len(client_id) > 4 else 'None'}, "
@@ -116,7 +122,8 @@ async def get_hubspot_service(
         client_secret=client_secret,
         redirect_uri=redirect_uri,
         core_service_url=core_service_url,
-        user_token=user_token
+        user_token=user_token,
+        tenant_id=cid
     )
 
 
